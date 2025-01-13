@@ -1,0 +1,204 @@
+Certainly! Below is a line-by-line explanation of the code and folder structure, designed for a new developer to understand its purpose and functionality.
+
+
+---
+
+Folder Structure Explanation
+
+ForexSimulation/
+├── src/                    # All source code is stored here.
+│   ├── main.cpp            # The entry point of the application.
+│   ├── Simulation/         # Contains simulators for Forex, Volatility, and Interest Rates.
+│   │   ├── ForexSimulator.hpp   # Header file for Forex simulator (declares functionality).
+│   │   ├── ForexSimulator.cpp   # Implementation of the Forex simulator.
+│   │   ├── VolatilitySimulator.hpp # Header for Volatility simulator.
+│   │   ├── VolatilitySimulator.cpp # Implementation of Volatility simulator.
+│   │   ├── InterestRateSimulator.hpp # Header for Interest Rate simulator.
+│   │   ├── InterestRateSimulator.cpp # Implementation of Interest Rate simulator.
+│   │   ├── ISimulator.hpp    # (Optional) An interface for simulators, if needed for extensibility.
+│   ├── Utils/               # Contains shared utilities like random number generators.
+│   │   ├── RandomGenerator.hpp   # Header for utility to generate random numbers.
+│   │   ├── RandomGenerator.cpp   # Implementation of random number generation.
+│   ├── Config/              # Centralized configuration of simulation parameters.
+│   │   ├── SimulationConfig.hpp  # Declares configurable parameters (e.g., initial rates, volatility).
+│   │   ├── SimulationConfig.cpp  # Defines the default values for parameters.
+│   ├── Output/              # Handles printing or saving output.
+│       ├── OutputPrinter.hpp     # Declares functionality for output formatting.
+│       ├── OutputPrinter.cpp     # Implements output formatting logic.
+├── CMakeLists.txt           # Build configuration for the project.
+
+
+---
+
+Code Explanation
+
+main.cpp (Entry Point)
+
+#include <iostream> // For input and output
+#include "Simulation/ForexSimulator.hpp"  // Include Forex simulator header
+#include "Simulation/VolatilitySimulator.hpp"  // Include Volatility simulator header
+#include "Simulation/InterestRateSimulator.hpp"  // Include Interest Rate simulator header
+#include "Config/SimulationConfig.hpp"  // Include simulation parameters
+#include "Output/OutputPrinter.hpp"  // Include output handling
+
+using namespace std; // Avoid prefixing standard library functions with `std::`
+
+int main() {
+    // Load simulation parameters (defined in Config/SimulationConfig)
+    Config::SimulationConfig config;
+
+    // Create Forex Simulator object and run the simulation
+    Simulation::ForexSimulator forexSim(config.forexInitialRate, config.forexDrift, config.forexVolatility, config.timeStep);
+    auto forexRates = forexSim.simulate(config.numSteps); // Simulate Forex rates
+
+    // Create Volatility Simulator object and run the simulation
+    Simulation::VolatilitySimulator volSim(config.volInitial, config.volReversionSpeed, config.volLongTermMean, config.volOfVol, config.timeStep);
+    auto volatilities = volSim.simulate(config.numSteps); // Simulate volatility
+
+    // Create Interest Rate Simulator object and run the simulation
+    Simulation::InterestRateSimulator rateSim(config.rateInitial, config.rateReversionSpeed, config.rateLongTermMean, config.rateVolatility, config.timeStep);
+    auto interestRates = rateSim.simulate(config.numSteps); // Simulate interest rates
+
+    // Print the results
+    Output::OutputPrinter::printResults(forexRates, "Forex Rates");
+    Output::OutputPrinter::printResults(volatilities, "Volatilities");
+    Output::OutputPrinter::printResults(interestRates, "Interest Rates");
+
+    return 0; // Indicate successful execution
+}
+
+
+---
+
+Forex Simulator (GBM)
+
+ForexSimulator.hpp
+
+#ifndef FOREX_SIMULATOR_HPP // Include guard to prevent multiple inclusions
+#define FOREX_SIMULATOR_HPP
+
+#include <vector> // Used for storing simulation results
+#include "../Utils/RandomGenerator.hpp" // Include random number generator
+
+namespace Simulation { // Namespace to organize simulators
+    class ForexSimulator {
+    public:
+        // Constructor to initialize Forex simulator parameters
+        ForexSimulator(double initialRate, double drift, double volatility, double dt);
+
+        // Function to run the simulation and return the results
+        std::vector<double> simulate(int steps);
+
+    private:
+        double S0; // Initial rate
+        double drift; // Drift rate
+        double volatility; // Volatility of rates
+        double dt; // Time step
+    };
+}
+
+#endif
+
+ForexSimulator.cpp
+
+#include "ForexSimulator.hpp"
+#include <cmath> // For mathematical functions like exp() and sqrt()
+
+namespace Simulation {
+    // Constructor initializes simulation parameters
+    ForexSimulator::ForexSimulator(double initialRate, double drift, double volatility, double dt)
+        : S0(initialRate), drift(drift), volatility(volatility), dt(dt) {}
+
+    // Function to simulate Forex rates
+    std::vector<double> ForexSimulator::simulate(int steps) {
+        std::vector<double> rates(steps); // Vector to store simulated rates
+        rates[0] = S0; // Initialize the first rate
+
+        for (int i = 1; i < steps; i++) {
+            double dW = std::sqrt(dt) * Utils::RandomGenerator::generateNormal(); // Random shock
+            rates[i] = rates[i - 1] * std::exp((drift - 0.5 * volatility * volatility) * dt + volatility * dW);
+        }
+        return rates; // Return the simulated rates
+    }
+}
+
+
+---
+
+Volatility Simulator (Ornstein-Uhlenbeck)
+
+VolatilitySimulator.hpp
+
+#ifndef VOLATILITY_SIMULATOR_HPP
+#define VOLATILITY_SIMULATOR_HPP
+
+#include <vector>
+#include "../Utils/RandomGenerator.hpp"
+
+namespace Simulation {
+    class VolatilitySimulator {
+    public:
+        VolatilitySimulator(double initialVol, double meanReversionSpeed, double longTermMean, double volOfVol, double dt);
+
+        std::vector<double> simulate(int steps);
+
+    private:
+        double v0; // Initial volatility
+        double meanReversionSpeed; // Speed of mean reversion
+        double longTermMean; // Long-term mean volatility
+        double volOfVol; // Volatility of volatility
+        double dt; // Time step
+    };
+}
+
+#endif
+
+VolatilitySimulator.cpp
+
+#include "VolatilitySimulator.hpp"
+#include <cmath>
+
+namespace Simulation {
+    VolatilitySimulator::VolatilitySimulator(double initialVol, double meanReversionSpeed, double longTermMean, double volOfVol, double dt)
+        : v0(initialVol), meanReversionSpeed(meanReversionSpeed), longTermMean(longTermMean), volOfVol(volOfVol), dt(dt) {}
+
+    std::vector<double> VolatilitySimulator::simulate(int steps) {
+        std::vector<double> volatilities(steps);
+        volatilities[0] = v0;
+
+        for (int i = 1; i < steps; i++) {
+            double dW = std::sqrt(dt) * Utils::RandomGenerator::generateNormal(); // Random noise
+            volatilities[i] = volatilities[i - 1] +
+                meanReversionSpeed * (longTermMean - volatilities[i - 1]) * dt + volOfVol * dW;
+
+            if (volatilities[i] < 0) volatilities[i] = 0; // Ensure non-negative volatility
+        }
+        return volatilities;
+    }
+}
+
+
+---
+
+Key Explanations for New Developers
+
+1. Namespaces: Used to group related classes and avoid name collisions.
+
+
+2. Header and Implementation Files: Separating declarations (.hpp) from definitions (.cpp) improves readability and modularity.
+
+
+3. Object-Oriented Programming (OOP):
+
+Classes encapsulate related logic (e.g., ForexSimulator manages Forex simulation logic).
+
+Constructors initialize the simulation parameters.
+
+
+
+4. Random Number Generator: Centralized in RandomGenerator.hpp for consistent and reusable random noise generation.
+
+
+
+Would you like to go deeper into specific components or further break down the structure?
+
