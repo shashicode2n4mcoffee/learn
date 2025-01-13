@@ -1,0 +1,346 @@
+To expand the system into a real-time option pricing and risk analysis system, I'll include the following advanced features and components to handle live market data, concurrent instrument processing, and advanced analytics. Here's the full plan and code snippets for each component.
+
+
+---
+
+Expanded Features
+
+1. Real-Time Data Integration:
+
+Integration with a live market data feed (e.g., stock prices, volatilities, and interest rates).
+
+Simulated real-time data if no live feed is available.
+
+
+
+2. Concurrent Instrument Processing:
+
+Use multithreading to process multiple instruments simultaneously.
+
+
+
+3. Advanced Risk Analytics:
+
+Portfolio-level Greeks aggregation.
+
+Stress testing scenarios.
+
+
+
+4. Modular Pricing Framework:
+
+Extendable for other pricing models like Heston, Binomial Trees, or Monte Carlo Simulations.
+
+
+
+5. Logging and Monitoring:
+
+Real-time logging of pricing and risk metrics.
+
+
+
+
+
+---
+
+Updated Folder Structure
+
+OptionPricingSystem/
+├── src/
+│   ├── main.cpp                  # Entry point for real-time processing
+│   ├── Pricing/
+│   │   ├── OptionPricer.hpp      # Interface for pricing models
+│   │   ├── BlackScholesModel.hpp # Black-Scholes model implementation
+│   │   ├── HestonModel.hpp       # Heston model implementation (future extension)
+│   │   ├── GreeksCalculator.hpp  # Greeks calculation
+│   ├── Risk/
+│   │   ├── VaRCalculator.hpp     # Value-at-Risk calculation
+│   │   ├── StressTester.hpp      # Stress testing logic
+│   ├── MarketData/
+│   │   ├── MarketDataFeed.hpp    # Simulates or fetches live market data
+│   │   ├── MarketDataFeed.cpp    # Implementation of market data
+│   ├── Utils/
+│   │   ├── ThreadPool.hpp        # Multithreaded processing
+│   │   ├── Logger.hpp            # Real-time logging utility
+│   ├── Config/
+│   │   ├── PricingConfig.hpp     # System-wide configurations
+│   ├── Output/
+│   │   ├── OutputPrinter.hpp     # Formatted output
+├── data/
+│   ├── market_data.csv           # Real or simulated market data
+│   ├── pricing_output.csv        # Output file for results
+├── CMakeLists.txt                # Build system configuration
+├── README.md                     # Documentation
+└── scripts/
+    ├── run_pricing.sh            # Shell script for execution
+
+
+---
+
+Code Implementation
+
+1. Market Data Feed
+
+Simulate or connect to live market data.
+
+MarketDataFeed.hpp
+
+#ifndef MARKET_DATA_FEED_HPP
+#define MARKET_DATA_FEED_HPP
+
+#include <unordered_map>
+#include <string>
+#include <vector>
+#include <thread>
+#include <functional>
+#include <mutex>
+
+namespace MarketData {
+    class MarketDataFeed {
+    public:
+        MarketDataFeed();
+        void startFeed(); // Start simulating or fetching data
+        std::unordered_map<std::string, double> getLatestData(); // Get the latest market data snapshot
+
+    private:
+        void simulateData(); // Simulate real-time updates
+        std::unordered_map<std::string, double> marketData;
+        std::mutex dataMutex;
+        bool running;
+    };
+}
+
+#endif
+
+MarketDataFeed.cpp
+
+#include "MarketDataFeed.hpp"
+#include <random>
+#include <chrono>
+#include <iostream>
+
+namespace MarketData {
+    MarketDataFeed::MarketDataFeed() : running(true) {
+        // Initialize simulated market data
+        marketData = {
+            {"AAPL", 150.0}, {"GOOG", 2800.0}, {"TSLA", 700.0},
+            {"SPOT_VOL", 0.2}, {"RISK_FREE_RATE", 0.01}
+        };
+    }
+
+    void MarketDataFeed::simulateData() {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::normal_distribution<> priceDist(0.0, 1.0);
+        std::normal_distribution<> volDist(0.0, 0.01);
+
+        while (running) {
+            {
+                std::lock_guard<std::mutex> lock(dataMutex);
+                marketData["AAPL"] += priceDist(gen);
+                marketData["GOOG"] += priceDist(gen);
+                marketData["TSLA"] += priceDist(gen);
+                marketData["SPOT_VOL"] += volDist(gen);
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(500)); // Update every 500ms
+        }
+    }
+
+    void MarketDataFeed::startFeed() {
+        std::thread(&MarketDataFeed::simulateData, this).detach();
+    }
+
+    std::unordered_map<std::string, double> MarketDataFeed::getLatestData() {
+        std::lock_guard<std::mutex> lock(dataMutex);
+        return marketData;
+    }
+}
+
+
+---
+
+2. Multithreaded Instrument Pricing
+
+Process multiple instruments concurrently.
+
+ThreadPool.hpp
+
+#ifndef THREAD_POOL_HPP
+#define THREAD_POOL_HPP
+
+#include <vector>
+#include <queue>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <functional>
+
+namespace Utils {
+    class ThreadPool {
+    public:
+        ThreadPool(size_t threads);
+        ~ThreadPool();
+
+        void enqueueTask(std::function<void()> task);
+
+    private:
+        std::vector<std::thread> workers;
+        std::queue<std::function<void()>> tasks;
+        std::mutex queueMutex;
+        std::condition_variable condition;
+        bool stop;
+    };
+}
+
+#endif
+
+ThreadPool.cpp
+
+#include "ThreadPool.hpp"
+
+namespace Utils {
+    ThreadPool::ThreadPool(size_t threads) : stop(false) {
+        for (size_t i = 0; i < threads; ++i) {
+            workers.emplace_back([this]() {
+                for (;;) {
+                    std::function<void()> task;
+                    {
+                        std::unique_lock<std::mutex> lock(this->queueMutex);
+                        this->condition.wait(lock, [this]() { return this->stop || !this->tasks.empty(); });
+
+                        if (this->stop && this->tasks.empty()) return;
+
+                        task = std::move(this->tasks.front());
+                        this->tasks.pop();
+                    }
+                    task();
+                }
+            });
+        }
+    }
+
+    ThreadPool::~ThreadPool() {
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            stop = true;
+        }
+        condition.notify_all();
+        for (std::thread &worker : workers) {
+            worker.join();
+        }
+    }
+
+    void ThreadPool::enqueueTask(std::function<void()> task) {
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            tasks.emplace(task);
+        }
+        condition.notify_one();
+    }
+}
+
+
+---
+
+3. Stress Testing
+
+StressTester.hpp
+
+#ifndef STRESS_TESTER_HPP
+#define STRESS_TESTER_HPP
+
+#include <unordered_map>
+#include <string>
+#include <vector>
+
+namespace Risk {
+    class StressTester {
+    public:
+        static std::unordered_map<std::string, double> applyStress(
+            const std::unordered_map<std::string, double>& baseMarketData,
+            double stressFactor
+        );
+    };
+}
+
+#endif
+
+StressTester.cpp
+
+#include "StressTester.hpp"
+
+namespace Risk {
+    std::unordered_map<std::string, double> StressTester::applyStress(
+        const std::unordered_map<std::string, double>& baseMarketData,
+        double stressFactor
+    ) {
+        std::unordered_map<std::string, double> stressedData = baseMarketData;
+        for (auto& pair : stressedData) {
+            pair.second *= (1 + stressFactor);
+        }
+        return stressedData;
+    }
+}
+
+
+---
+
+How the System Works
+
+1. Market Data Feed:
+
+Simulates or connects to live data.
+
+Updates prices and volatilities every 500ms.
+
+
+
+2. Multithreading:
+
+Uses ThreadPool to price multiple instruments in parallel.
+
+
+
+3. Stress Testing:
+
+Applies stress scenarios to simulate extreme market conditions.
+
+
+
+
+
+---
+
+Real-Time Execution
+
+main.cpp
+
+#include <iostream>
+#include "MarketData/MarketDataFeed.hpp"
+#include "Utils/ThreadPool.hpp"
+#include "Pricing/BlackScholesModel.hpp"
+#include "Risk/StressTester.hpp"
+
+using namespace std;
+
+int main() {
+    MarketData::MarketDataFeed feed;
+    feed.startFeed();
+
+    Utils::ThreadPool pool(4); // Create a thread pool with 4 threads
+
+    for (int i = 0; i < 10; ++i) {
+        pool.enqueueTask([&feed]() {
+            auto data = feed.getLatestData();
+            Pricing::BlackScholesModel model(data["AAPL"], 150.0, data["RISK_FREE_RATE"], data["SPOT_VOL"], 0.5);
+            double callPrice = model.calculateCallPrice();
+            cout << "Call Price for AAPL: " << callPrice << endl;
+        });
+    }
+
+    this_thread::sleep_for(chrono::seconds(10));
+    return 0;
+}
+
+This expanded system can handle real-time updates, process multiple instruments, and perform risk calculations. Let me know if you’d like further extensions!
+
