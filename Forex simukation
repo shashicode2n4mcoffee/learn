@@ -1,0 +1,263 @@
+Below is the complete implementation of the forex simulation system organized into the specified folder structure. I'll write the code files for each folder to fit the industry-standard HFT project structure.
+
+
+---
+
+Folder Structure
+
+ForexSimulation/
+├── src/
+│   ├── main.cpp
+│   ├── Simulation/
+│   │   ├── ForexSimulator.hpp
+│   │   ├── ForexSimulator.cpp
+│   │   ├── VolatilitySimulator.hpp
+│   │   ├── VolatilitySimulator.cpp
+│   │   ├── InterestRateSimulator.hpp
+│   │   ├── InterestRateSimulator.cpp
+│   │   ├── ISimulator.hpp
+│   ├── Utils/
+│   │   ├── RandomGenerator.hpp
+│   │   ├── RandomGenerator.cpp
+│   ├── Config/
+│   │   ├── SimulationConfig.hpp
+│   │   ├── SimulationConfig.cpp
+│   ├── Output/
+│       ├── OutputPrinter.hpp
+│       ├── OutputPrinter.cpp
+├── CMakeLists.txt
+
+
+---
+
+1. CMake Configuration (CMakeLists.txt)
+
+cmake_minimum_required(VERSION 3.16)
+project(ForexSimulation)
+
+set(CMAKE_CXX_STANDARD 17)
+
+# Include directories
+include_directories(src/)
+
+# Add subdirectories
+add_subdirectory(src/Simulation)
+add_subdirectory(src/Utils)
+add_subdirectory(src/Config)
+add_subdirectory(src/Output)
+
+# Add main executable
+add_executable(ForexSimulation src/main.cpp)
+
+# Link libraries
+target_link_libraries(ForexSimulation Simulation Utils Config Output)
+
+
+---
+
+2. Main File (src/main.cpp)
+
+#include <iostream>
+#include "Simulation/ForexSimulator.hpp"
+#include "Simulation/VolatilitySimulator.hpp"
+#include "Simulation/InterestRateSimulator.hpp"
+#include "Config/SimulationConfig.hpp"
+#include "Output/OutputPrinter.hpp"
+
+using namespace std;
+
+int main() {
+    // Load simulation parameters
+    Config::SimulationConfig config;
+
+    // Forex Simulation
+    Simulation::ForexSimulator forexSim(config.forexInitialRate, config.forexDrift, config.forexVolatility, config.timeStep);
+    auto forexRates = forexSim.simulate(config.numSteps);
+
+    // Volatility Simulation
+    Simulation::VolatilitySimulator volSim(config.volInitial, config.volReversionSpeed, config.volLongTermMean, config.volOfVol, config.timeStep);
+    auto volatilities = volSim.simulate(config.numSteps);
+
+    // Interest Rate Simulation
+    Simulation::InterestRateSimulator rateSim(config.rateInitial, config.rateReversionSpeed, config.rateLongTermMean, config.rateVolatility, config.timeStep);
+    auto interestRates = rateSim.simulate(config.numSteps);
+
+    // Print results
+    Output::OutputPrinter::printResults(forexRates, "Forex Rates");
+    Output::OutputPrinter::printResults(volatilities, "Volatilities");
+    Output::OutputPrinter::printResults(interestRates, "Interest Rates");
+
+    return 0;
+}
+
+
+---
+
+3. Simulation Folder
+
+3.1 Forex Simulator (src/Simulation/ForexSimulator.hpp)
+
+#ifndef FOREX_SIMULATOR_HPP
+#define FOREX_SIMULATOR_HPP
+
+#include <vector>
+#include "../Utils/RandomGenerator.hpp"
+
+namespace Simulation {
+    class ForexSimulator {
+    public:
+        ForexSimulator(double initialRate, double drift, double volatility, double dt);
+        std::vector<double> simulate(int steps);
+
+    private:
+        double S0, drift, volatility, dt;
+    };
+}
+
+#endif
+
+3.2 Forex Simulator Implementation (src/Simulation/ForexSimulator.cpp)
+
+#include "ForexSimulator.hpp"
+#include <cmath>
+
+namespace Simulation {
+    ForexSimulator::ForexSimulator(double initialRate, double drift, double volatility, double dt)
+        : S0(initialRate), drift(drift), volatility(volatility), dt(dt) {}
+
+    std::vector<double> ForexSimulator::simulate(int steps) {
+        std::vector<double> rates(steps);
+        rates[0] = S0;
+
+        for (int i = 1; i < steps; i++) {
+            double dW = std::sqrt(dt) * Utils::RandomGenerator::generateNormal();
+            rates[i] = rates[i - 1] * std::exp((drift - 0.5 * volatility * volatility) * dt + volatility * dW);
+        }
+        return rates;
+    }
+}
+
+3.3 Volatility Simulator (src/Simulation/VolatilitySimulator.hpp)
+
+#ifndef VOLATILITY_SIMULATOR_HPP
+#define VOLATILITY_SIMULATOR_HPP
+
+#include <vector>
+#include "../Utils/RandomGenerator.hpp"
+
+namespace Simulation {
+    class VolatilitySimulator {
+    public:
+        VolatilitySimulator(double initialVol, double meanReversionSpeed, double longTermMean, double volOfVol, double dt);
+        std::vector<double> simulate(int steps);
+
+    private:
+        double v0, meanReversionSpeed, longTermMean, volOfVol, dt;
+    };
+}
+
+#endif
+
+3.4 Volatility Simulator Implementation (src/Simulation/VolatilitySimulator.cpp)
+
+#include "VolatilitySimulator.hpp"
+#include <cmath>
+
+namespace Simulation {
+    VolatilitySimulator::VolatilitySimulator(double initialVol, double meanReversionSpeed, double longTermMean, double volOfVol, double dt)
+        : v0(initialVol), meanReversionSpeed(meanReversionSpeed), longTermMean(longTermMean), volOfVol(volOfVol), dt(dt) {}
+
+    std::vector<double> VolatilitySimulator::simulate(int steps) {
+        std::vector<double> volatilities(steps);
+        volatilities[0] = v0;
+
+        for (int i = 1; i < steps; i++) {
+            double dW = std::sqrt(dt) * Utils::RandomGenerator::generateNormal();
+            volatilities[i] = volatilities[i - 1] + meanReversionSpeed * (longTermMean - volatilities[i - 1]) * dt + volOfVol * dW;
+            if (volatilities[i] < 0) volatilities[i] = 0; // Prevent negative volatility
+        }
+        return volatilities;
+    }
+}
+
+3.5 Interest Rate Simulator (src/Simulation/InterestRateSimulator.hpp)
+
+#ifndef INTEREST_RATE_SIMULATOR_HPP
+#define INTEREST_RATE_SIMULATOR_HPP
+
+#include <vector>
+#include "../Utils/RandomGenerator.hpp"
+
+namespace Simulation {
+    class InterestRateSimulator {
+    public:
+        InterestRateSimulator(double initialRate, double meanReversionSpeed, double longTermMean, double sigma, double dt);
+        std::vector<double> simulate(int steps);
+
+    private:
+        double r0, meanReversionSpeed, longTermMean, sigma, dt;
+    };
+}
+
+#endif
+
+3.6 Interest Rate Simulator Implementation (src/Simulation/InterestRateSimulator.cpp)
+
+#include "InterestRateSimulator.hpp"
+#include <cmath>
+
+namespace Simulation {
+    InterestRateSimulator::InterestRateSimulator(double initialRate, double meanReversionSpeed, double longTermMean, double sigma, double dt)
+        : r0(initialRate), meanReversionSpeed(meanReversionSpeed), longTermMean(longTermMean), sigma(sigma), dt(dt) {}
+
+    std::vector<double> InterestRateSimulator::simulate(int steps) {
+        std::vector<double> rates(steps);
+        rates[0] = r0;
+
+        for (int i = 1; i < steps; i++) {
+            double dW = std::sqrt(dt) * Utils::RandomGenerator::generateNormal();
+            rates[i] = rates[i - 1] + meanReversionSpeed * (longTermMean - rates[i - 1]) * dt + sigma * dW;
+        }
+        return rates;
+    }
+}
+
+
+---
+
+4. Utils Folder
+
+4.1 Random Generator (src/Utils/RandomGenerator.hpp)
+
+#ifndef RANDOM_GENERATOR_HPP
+#define RANDOM_GENERATOR_HPP
+
+#include <random>
+
+namespace Utils {
+    class RandomGenerator {
+    public:
+        static double generateNormal(double mean = 0.0, double stddev = 1.0);
+    };
+}
+
+#endif
+
+4.2 Random Generator Implementation (src/Utils/RandomGenerator.cpp)
+
+#include "RandomGenerator.hpp"
+#include <chrono>
+
+namespace Utils {
+    double RandomGenerator::generateNormal(double mean, double stddev) {
+        static std::mt19937 generator(std::chrono::system_clock::now().time_since_epoch().count());
+        std::normal_distribution<double> distribution(mean, stddev);
+        return distribution(generator);
+    }
+}
+
+
+---
+
+This structure keeps code modular, testable, and efficient. Let me know if you'd like tests or scripts added!
+
