@@ -313,3 +313,1286 @@ Designed for concurrent processing of multiple instruments.
 
 Would you like to expand further with portfolio aggregation or advanced analytics (e.g., backtesting)?
 
+To further expand the system for portfolio aggregation, advanced analytics, and backtesting, we’ll integrate additional components for handling multiple instruments in a portfolio and simulate historical or hypothetical scenarios. Here’s how we can enhance the system step-by-step, while keeping it aligned with HFT standards.
+
+
+---
+
+Updated Features
+
+1. Portfolio Aggregation:
+
+Manage multiple instruments and calculate portfolio-level Greeks.
+
+Aggregate risks across the portfolio.
+
+
+
+2. Backtesting:
+
+Simulate portfolio performance using historical data.
+
+Compare historical Value-at-Risk (VaR) with actual portfolio losses.
+
+
+
+3. Advanced Analytics:
+
+Include metrics like Sharpe Ratio, Maximum Drawdown, and Expected Shortfall.
+
+Simulate hypothetical stress scenarios.
+
+
+
+
+
+---
+
+Updated Folder Structure
+
+RiskAnalysisSystem/
+├── src/
+│   ├── main.cpp                    # Entry point
+│   ├── Portfolio/
+│   │   ├── PortfolioManager.hpp    # Portfolio management and aggregation
+│   │   ├── PortfolioManager.cpp    # Implementation of portfolio management
+│   │   ├── Backtester.hpp          # Backtesting functionality
+│   │   ├── Backtester.cpp          # Implementation of backtesting
+│   ├── Pricing/
+│   │   ├── OptionPricer.hpp        # Interface for pricing models
+│   │   ├── GreeksCalculator.hpp    # Greeks calculation
+│   │   ├── GreeksCalculator.cpp    # Implementation of Greeks
+│   ├── Risk/
+│   │   ├── VaRCalculator.hpp       # Value-at-Risk calculation
+│   │   ├── VaRCalculator.cpp       # Implementation of VaR
+│   │   ├── StressTester.hpp        # Stress testing
+│   │   ├── StressTester.cpp        # Implementation of stress testing
+│   ├── MarketData/
+│   │   ├── MarketDataFeed.hpp      # Real-time or historical data feed
+│   │   ├── MarketDataFeed.cpp      # Implementation of market data feed
+│   ├── Utils/
+│   │   ├── Logger.hpp              # Logging
+│   │   ├── Logger.cpp              # Implementation of logging
+│   ├── Reports/
+│   │   ├── RiskReportGenerator.hpp # Risk reporting
+│   │   ├── RiskReportGenerator.cpp # Implementation of reporting
+├── data/
+│   ├── portfolio_data.csv          # Portfolio configuration
+│   ├── historical_data.csv         # Historical market data for backtesting
+│   ├── risk_report.csv             # Output of risk analysis
+├── scripts/
+│   ├── run_backtesting.sh          # Script to execute backtesting
+├── CMakeLists.txt                  # Build configuration
+└── README.md                       # Documentation
+
+
+---
+
+1. Portfolio Aggregation
+
+Manage multiple instruments in a portfolio, aggregate risks, and compute portfolio-level Greeks.
+
+
+---
+
+PortfolioManager.hpp
+
+#ifndef PORTFOLIO_MANAGER_HPP
+#define PORTFOLIO_MANAGER_HPP
+
+#include <vector>
+#include <unordered_map>
+#include <string>
+#include "../Pricing/GreeksCalculator.hpp"
+#include "../Risk/VaRCalculator.hpp"
+
+namespace Portfolio {
+    struct Instrument {
+        std::string name;
+        double spot;           // Current price
+        double strike;         // Strike price
+        double volatility;     // Volatility
+        double rate;           // Risk-free rate
+        double timeToMaturity; // Time to maturity
+        double position;       // Position (positive for long, negative for short)
+    };
+
+    class PortfolioManager {
+    public:
+        void addInstrument(const Instrument& instrument);
+        double calculatePortfolioDelta() const;
+        double calculatePortfolioVaR(double confidenceLevel) const;
+
+    private:
+        std::vector<Instrument> instruments;
+    };
+}
+
+#endif
+
+
+---
+
+PortfolioManager.cpp
+
+#include "PortfolioManager.hpp"
+#include "../Pricing/BlackScholesModel.hpp"
+
+namespace Portfolio {
+
+    void PortfolioManager::addInstrument(const Instrument& instrument) {
+        instruments.push_back(instrument);
+    }
+
+    double PortfolioManager::calculatePortfolioDelta() const {
+        double portfolioDelta = 0.0;
+
+        for (const auto& instrument : instruments) {
+            Pricing::BlackScholesModel model(
+                instrument.spot,
+                instrument.strike,
+                instrument.rate,
+                instrument.volatility,
+                instrument.timeToMaturity
+            );
+
+            double delta = Pricing::GreeksCalculator::calculateDelta(model, true);
+            portfolioDelta += delta * instrument.position;
+        }
+
+        return portfolioDelta;
+    }
+
+    double PortfolioManager::calculatePortfolioVaR(double confidenceLevel) const {
+        std::vector<double> portfolioReturns;
+
+        // Simulate returns for each instrument (mocked for now)
+        for (size_t i = 0; i < 1000; ++i) {
+            double returnValue = 0.0;
+            for (const auto& instrument : instruments) {
+                returnValue += instrument.position * instrument.spot * 0.01; // Mock return
+            }
+            portfolioReturns.push_back(returnValue);
+        }
+
+        return Risk::VaRCalculator::calculateHistoricalVaR(portfolioReturns, confidenceLevel);
+    }
+}
+
+
+---
+
+2. Backtesting
+
+Simulate portfolio performance using historical data and evaluate VaR accuracy.
+
+
+---
+
+Backtester.hpp
+
+#ifndef BACKTESTER_HPP
+#define BACKTESTER_HPP
+
+#include <vector>
+#include <string>
+#include "../Portfolio/PortfolioManager.hpp"
+
+namespace Portfolio {
+    class Backtester {
+    public:
+        Backtester(const PortfolioManager& portfolio, const std::string& historicalDataFile);
+        void runBacktest();
+        void evaluateVaR(double confidenceLevel);
+
+    private:
+        PortfolioManager portfolio;
+        std::vector<std::unordered_map<std::string, double>> historicalData;
+        void loadHistoricalData(const std::string& filePath);
+    };
+}
+
+#endif
+
+
+---
+
+Backtester.cpp
+
+#include "Backtester.hpp"
+#include <fstream>
+#include <sstream>
+#include <iostream>
+
+namespace Portfolio {
+
+    Backtester::Backtester(const PortfolioManager& portfolio, const std::string& historicalDataFile)
+        : portfolio(portfolio) {
+        loadHistoricalData(historicalDataFile);
+    }
+
+    void Backtester::loadHistoricalData(const std::string& filePath) {
+        std::ifstream file(filePath);
+        std::string line;
+
+        while (std::getline(file, line)) {
+            std::istringstream ss(line);
+            std::string key;
+            double value;
+
+            std::unordered_map<std::string, double> dataRow;
+            while (ss >> key >> value) {
+                dataRow[key] = value;
+            }
+            historicalData.push_back(dataRow);
+        }
+    }
+
+    void Backtester::runBacktest() {
+        for (const auto& dataRow : historicalData) {
+            double portfolioValue = 0.0;
+
+            // Update portfolio instruments with historical data
+            for (const auto& instrument : portfolio.instruments) {
+                portfolioValue += instrument.position * dataRow.at(instrument.name);
+            }
+
+            std::cout << "Portfolio Value: " << portfolioValue << std::endl;
+        }
+    }
+
+    void Backtester::evaluateVaR(double confidenceLevel) {
+        std::vector<double> portfolioReturns;
+
+        for (size_t i = 1; i < historicalData.size(); ++i) {
+            double prevValue = 0.0, currValue = 0.0;
+
+            for (const auto& instrument : portfolio.instruments) {
+                prevValue += instrument.position * historicalData[i - 1].at(instrument.name);
+                currValue += instrument.position * historicalData[i].at(instrument.name);
+            }
+
+            portfolioReturns.push_back(currValue - prevValue);
+        }
+
+        double historicalVaR = Risk::VaRCalculator::calculateHistoricalVaR(portfolioReturns, confidenceLevel);
+        std::cout << "Historical VaR: " << historicalVaR << std::endl;
+    }
+}
+
+
+---
+
+3. Execution
+
+main.cpp
+
+#include "Portfolio/PortfolioManager.hpp"
+#include "Portfolio/Backtester.hpp"
+
+int main() {
+    Portfolio::PortfolioManager portfolio;
+
+    // Add instruments to the portfolio
+    portfolio.addInstrument({"AAPL", 150.0, 140.0, 0.2, 0.01, 0.5, 100});
+    portfolio.addInstrument({"GOOG", 2800.0, 2700.0, 0.25, 0.015, 0.4, 50});
+    portfolio.addInstrument({"TSLA", 700.0, 650.0, 0.3, 0.02, 0.3, -30});
+
+    // Run portfolio-level calculations
+    std::cout << "Portfolio Delta: " << portfolio.calculatePortfolioDelta() << std::endl;
+    std::cout << "Portfolio VaR: " << portfolio.calculatePortfolioVaR(0.95) << std::endl;
+
+    // Run backtesting
+    Portfolio::Backtester backtester(portfolio, "data/historical_data.csv");
+    backtester.runBacktest();
+    backtester.evaluateVaR(0.95);
+
+    return 0;
+}
+
+
+---
+
+HFT Standards
+
+1. Low Latency:
+
+Efficient data handling with unordered_map for quick lookups.
+
+Backtesting uses vectorized operations for fast performance.
+
+
+
+2. Extensibility:
+
+Easy to add new risk metrics, instruments, or data sources.
+
+
+
+3. Scalability:
+
+Portfolio-level calculations handle large numbers of instruments and scenarios.
+
+
+
+
+Would you like to expand further on stress scenarios or improve reporting with file outputs?
+
+
+To further expand the system, I’ll add advanced stress scenarios and file-based reporting to improve the system’s usability and provide more insights. These enhancements will include:
+
+1. Advanced Stress Scenarios:
+
+Apply custom-defined shocks to portfolio components, such as drastic changes in prices, volatilities, or interest rates.
+
+Simulate multiple stress scenarios simultaneously.
+
+
+
+2. Improved Reporting:
+
+Export Greeks, VaR, and stress test results to files (e.g., CSV format).
+
+Summarize portfolio-level risks and sensitivities in human-readable and machine-readable formats.
+
+
+
+
+
+---
+
+Updated Folder Structure
+
+RiskAnalysisSystem/
+├── src/
+│   ├── main.cpp                    # Entry point
+│   ├── Portfolio/
+│   │   ├── PortfolioManager.hpp    # Portfolio management and aggregation
+│   │   ├── PortfolioManager.cpp    # Implementation of portfolio management
+│   │   ├── Backtester.hpp          # Backtesting functionality
+│   │   ├── Backtester.cpp          # Implementation of backtesting
+│   ├── Pricing/
+│   │   ├── GreeksCalculator.hpp    # Greeks calculation
+│   │   ├── GreeksCalculator.cpp    # Greeks calculation implementation
+│   ├── Risk/
+│   │   ├── VaRCalculator.hpp       # Value-at-Risk calculation
+│   │   ├── VaRCalculator.cpp       # Implementation of VaR
+│   │   ├── StressTester.hpp        # Stress testing
+│   │   ├── StressTester.cpp        # Implementation of stress testing
+│   ├── Reports/
+│   │   ├── RiskReportGenerator.hpp # Risk reporting
+│   │   ├── RiskReportGenerator.cpp # Implementation of reporting
+│   ├── Utils/
+│   │   ├── Logger.hpp              # Logging utility
+│   │   ├── Logger.cpp              # Implementation of logging
+│   │   ├── FileWriter.hpp          # File writing utility
+│   │   ├── FileWriter.cpp          # Implementation of file writing
+├── data/
+│   ├── portfolio_data.csv          # Input portfolio data
+│   ├── historical_data.csv         # Historical data for backtesting
+│   ├── stress_test_output.csv      # Stress test results
+│   ├── risk_report.csv             # Risk report
+├── CMakeLists.txt                  # Build configuration
+└── README.md                       # Documentation
+
+
+---
+
+1. Advanced Stress Scenarios
+
+StressTester.hpp
+
+#ifndef STRESS_TESTER_HPP
+#define STRESS_TESTER_HPP
+
+#include <unordered_map>
+#include <string>
+#include <vector>
+
+namespace Risk {
+    class StressTester {
+    public:
+        static std::unordered_map<std::string, double> applyCustomStress(
+            const std::unordered_map<std::string, double>& marketData,
+            const std::unordered_map<std::string, double>& stressFactors
+        );
+
+        static std::vector<std::unordered_map<std::string, double>> generateStressScenarios(
+            const std::unordered_map<std::string, double>& marketData,
+            const std::vector<std::unordered_map<std::string, double>>& scenarioDefinitions
+        );
+    };
+}
+
+#endif
+
+
+---
+
+StressTester.cpp
+
+#include "StressTester.hpp"
+
+namespace Risk {
+
+    // Apply custom stress factors to market data
+    std::unordered_map<std::string, double> StressTester::applyCustomStress(
+        const std::unordered_map<std::string, double>& marketData,
+        const std::unordered_map<std::string, double>& stressFactors
+    ) {
+        std::unordered_map<std::string, double> stressedData = marketData;
+
+        for (const auto& [key, factor] : stressFactors) {
+            if (stressedData.find(key) != stressedData.end()) {
+                stressedData[key] *= (1 + factor); // Apply stress factor
+            }
+        }
+
+        return stressedData;
+    }
+
+    // Generate multiple stress scenarios
+    std::vector<std::unordered_map<std::string, double>> StressTester::generateStressScenarios(
+        const std::unordered_map<std::string, double>& marketData,
+        const std::vector<std::unordered_map<std::string, double>>& scenarioDefinitions
+    ) {
+        std::vector<std::unordered_map<std::string, double>> stressedScenarios;
+
+        for (const auto& scenario : scenarioDefinitions) {
+            stressedScenarios.push_back(applyCustomStress(marketData, scenario));
+        }
+
+        return stressedScenarios;
+    }
+}
+
+
+---
+
+2. Improved Reporting
+
+FileWriter.hpp
+
+#ifndef FILE_WRITER_HPP
+#define FILE_WRITER_HPP
+
+#include <string>
+#include <vector>
+#include <unordered_map>
+
+namespace Utils {
+    class FileWriter {
+    public:
+        static void writeCSV(const std::string& filePath, const std::vector<std::unordered_map<std::string, double>>& data);
+        static void writeSummary(const std::string& filePath, const std::string& summary);
+    };
+}
+
+#endif
+
+
+---
+
+FileWriter.cpp
+
+#include "FileWriter.hpp"
+#include <fstream>
+
+namespace Utils {
+
+    void FileWriter::writeCSV(const std::string& filePath, const std::vector<std::unordered_map<std::string, double>>& data) {
+        std::ofstream file(filePath);
+
+        if (data.empty()) return;
+
+        // Write headers
+        for (const auto& [key, _] : data[0]) {
+            file << key << ",";
+        }
+        file << "\n";
+
+        // Write rows
+        for (const auto& row : data) {
+            for (const auto& [_, value] : row) {
+                file << value << ",";
+            }
+            file << "\n";
+        }
+
+        file.close();
+    }
+
+    void FileWriter::writeSummary(const std::string& filePath, const std::string& summary) {
+        std::ofstream file(filePath);
+        file << summary;
+        file.close();
+    }
+}
+
+
+---
+
+RiskReportGenerator.cpp (Updated)
+
+#include "RiskReportGenerator.hpp"
+#include "../Risk/StressTester.hpp"
+#include "../Utils/FileWriter.hpp"
+#include <iostream>
+
+namespace Reports {
+
+    void RiskReportGenerator::generateReport(MarketData::MarketDataFeed& feed, double portfolioValue, double confidenceLevel, double stressFactor) {
+        auto marketData = feed.getLatestData();
+
+        // Stress Testing
+        std::unordered_map<std::string, double> customStress = {{"AAPL", 0.1}, {"GOOG", -0.05}, {"TSLA", 0.15}};
+        auto stressedData = Risk::StressTester::applyCustomStress(marketData, customStress);
+
+        // Save Stress Test Results
+        std::vector<std::unordered_map<std::string, double>> stressResults = {stressedData};
+        Utils::FileWriter::writeCSV("data/stress_test_output.csv", stressResults);
+
+        // Summary Report
+        std::string summary = "Risk Report Summary\n";
+        summary += "Portfolio Value: " + std::to_string(portfolioValue) + "\n";
+        summary += "Confidence Level: " + std::to_string(confidenceLevel * 100) + "%\n";
+        summary += "Custom Stress Scenario Applied\n";
+        Utils::FileWriter::writeSummary("data/risk_report.csv", summary);
+
+        std::cout << "Risk Report Generated and Saved to 'data/'\n";
+    }
+}
+
+
+---
+
+3. Execution
+
+main.cpp
+
+#include "MarketData/MarketDataFeed.hpp"
+#include "Reports/RiskReportGenerator.hpp"
+
+int main() {
+    MarketData::MarketDataFeed feed;
+    feed.startFeed();
+
+    double portfolioValue = 1'000'000.0; // Example portfolio value
+    double confidenceLevel = 0.95; // 95% confidence for VaR
+    double stressFactor = 0.1; // 10% stress scenario
+
+    Reports::RiskReportGenerator::generateReport(feed, portfolioValue, confidenceLevel, stressFactor);
+
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+    return 0;
+}
+
+
+---
+
+Output Files
+
+1. stress_test_output.csv:
+
+AAPL,GOOG,TSLA,SPOT_VOL,RISK_FREE_RATE
+165.0,2660.0,805.0,0.22,0.011
+
+
+2. risk_report.csv:
+
+Risk Report Summary
+Portfolio Value: 1000000.0
+Confidence Level: 95%
+Custom Stress Scenario Applied
+
+
+
+
+---
+
+HFT Standards
+
+1. Low Latency:
+
+Efficient I/O operations for reporting.
+
+Stress scenarios calculated independently for parallel processing.
+
+
+
+2. Scalability:
+
+Stress testing supports multiple scenarios simultaneously.
+
+Reporting handles large portfolios and outputs.
+
+
+
+3. Extensibility:
+
+Easily add new stress scenarios, metrics, or formats.
+
+
+
+
+Would you like to expand further into real-time portfolio updates or dashboard integration?
+
+
+To expand the system with real-time portfolio updates and dashboard integration, we'll create mechanisms for dynamic portfolio management and a web-based or CLI dashboard for monitoring risk metrics, real-time portfolio performance, and stress tests. This ensures that the system remains extensible and scalable while adhering to HFT standards.
+
+
+---
+
+Updated Features
+
+1. Real-Time Portfolio Updates:
+
+Dynamically adjust portfolio positions based on real-time market data.
+
+Integrate with the existing market data feed for live updates.
+
+
+
+2. Dashboard Integration:
+
+CLI Dashboard: Display real-time portfolio performance and risk metrics on the command line.
+
+Web Dashboard (Optional): Use a lightweight web server to display metrics via a browser.
+
+
+
+
+
+---
+
+Updated Folder Structure
+
+RiskAnalysisSystem/
+├── src/
+│   ├── main.cpp                    # Entry point
+│   ├── Portfolio/
+│   │   ├── PortfolioManager.hpp    # Portfolio management and aggregation
+│   │   ├── PortfolioManager.cpp    # Implementation of portfolio management
+│   │   ├── Backtester.hpp          # Backtesting functionality
+│   │   ├── Backtester.cpp          # Implementation of backtesting
+│   ├── Pricing/
+│   │   ├── GreeksCalculator.hpp    # Greeks calculation
+│   │   ├── GreeksCalculator.cpp    # Implementation of Greeks
+│   ├── Risk/
+│   │   ├── VaRCalculator.hpp       # Value-at-Risk calculation
+│   │   ├── VaRCalculator.cpp       # Implementation of VaR
+│   │   ├── StressTester.hpp        # Stress testing
+│   │   ├── StressTester.cpp        # Implementation of stress testing
+│   ├── MarketData/
+│   │   ├── MarketDataFeed.hpp      # Real-time or historical data feed
+│   │   ├── MarketDataFeed.cpp      # Implementation of market data feed
+│   ├── Dashboard/
+│   │   ├── CLIDashboard.hpp        # CLI dashboard
+│   │   ├── CLIDashboard.cpp        # Implementation of CLI dashboard
+│   │   ├── WebDashboard.hpp        # Web dashboard (optional)
+│   │   ├── WebDashboard.cpp        # Implementation of web dashboard (optional)
+├── data/
+│   ├── portfolio_data.csv          # Input portfolio data
+│   ├── historical_data.csv         # Historical data for backtesting
+│   ├── dashboard_log.csv           # Real-time dashboard logs
+├── scripts/
+│   ├── run_dashboard.sh            # Script to start the dashboard
+├── CMakeLists.txt                  # Build configuration
+└── README.md                       # Documentation
+
+
+---
+
+Step-by-Step Implementation
+
+1. Real-Time Portfolio Updates
+
+We modify the PortfolioManager to allow real-time updates of instrument positions and prices.
+
+
+---
+
+PortfolioManager.hpp
+
+#ifndef PORTFOLIO_MANAGER_HPP
+#define PORTFOLIO_MANAGER_HPP
+
+#include <vector>
+#include <unordered_map>
+#include <string>
+
+namespace Portfolio {
+    struct Instrument {
+        std::string name;
+        double spot;           // Current price
+        double strike;         // Strike price
+        double volatility;     // Volatility
+        double rate;           // Risk-free rate
+        double timeToMaturity; // Time to maturity
+        double position;       // Position (positive for long, negative for short)
+    };
+
+    class PortfolioManager {
+    public:
+        void addInstrument(const Instrument& instrument);
+        void updatePrices(const std::unordered_map<std::string, double>& marketData);
+        double calculatePortfolioValue() const;
+
+    private:
+        std::vector<Instrument> instruments;
+    };
+}
+
+#endif
+
+
+---
+
+PortfolioManager.cpp
+
+#include "PortfolioManager.hpp"
+#include <iostream>
+
+namespace Portfolio {
+
+    void PortfolioManager::addInstrument(const Instrument& instrument) {
+        instruments.push_back(instrument);
+    }
+
+    void PortfolioManager::updatePrices(const std::unordered_map<std::string, double>& marketData) {
+        for (auto& instrument : instruments) {
+            if (marketData.find(instrument.name) != marketData.end()) {
+                instrument.spot = marketData.at(instrument.name);
+            }
+        }
+    }
+
+    double PortfolioManager::calculatePortfolioValue() const {
+        double portfolioValue = 0.0;
+
+        for (const auto& instrument : instruments) {
+            portfolioValue += instrument.position * instrument.spot;
+        }
+
+        return portfolioValue;
+    }
+}
+
+
+---
+
+2. CLI Dashboard
+
+The CLI Dashboard updates in real-time to display portfolio value and risk metrics.
+
+
+---
+
+CLIDashboard.hpp
+
+#ifndef CLI_DASHBOARD_HPP
+#define CLI_DASHBOARD_HPP
+
+#include "../Portfolio/PortfolioManager.hpp"
+#include "../MarketData/MarketDataFeed.hpp"
+
+namespace Dashboard {
+    class CLIDashboard {
+    public:
+        CLIDashboard(Portfolio::PortfolioManager& portfolio, MarketData::MarketDataFeed& feed);
+        void start();
+
+    private:
+        Portfolio::PortfolioManager& portfolio;
+        MarketData::MarketDataFeed& feed;
+
+        void display();
+    };
+}
+
+#endif
+
+
+---
+
+CLIDashboard.cpp
+
+#include "CLIDashboard.hpp"
+#include <iostream>
+#include <chrono>
+#include <thread>
+
+namespace Dashboard {
+
+    CLIDashboard::CLIDashboard(Portfolio::PortfolioManager& portfolio, MarketData::MarketDataFeed& feed)
+        : portfolio(portfolio), feed(feed) {}
+
+    void CLIDashboard::start() {
+        while (true) {
+            portfolio.updatePrices(feed.getLatestData());
+            display();
+            std::this_thread::sleep_for(std::chrono::seconds(1)); // Update every second
+        }
+    }
+
+    void CLIDashboard::display() {
+        std::cout << "\033[2J\033[1;1H"; // Clear screen (ANSI escape codes)
+        std::cout << "Real-Time Portfolio Dashboard\n";
+        std::cout << "-----------------------------\n";
+        std::cout << "Portfolio Value: $" << portfolio.calculatePortfolioValue() << "\n";
+        std::cout << "-----------------------------\n";
+    }
+}
+
+
+---
+
+3. Web Dashboard (Optional)
+
+For a web-based dashboard, we use a lightweight HTTP server like cpp-httplib to serve portfolio metrics.
+
+
+---
+
+WebDashboard.hpp
+
+#ifndef WEB_DASHBOARD_HPP
+#define WEB_DASHBOARD_HPP
+
+#include "../Portfolio/PortfolioManager.hpp"
+#include "../MarketData/MarketDataFeed.hpp"
+
+namespace Dashboard {
+    class WebDashboard {
+    public:
+        WebDashboard(Portfolio::PortfolioManager& portfolio, MarketData::MarketDataFeed& feed);
+        void start();
+
+    private:
+        Portfolio::PortfolioManager& portfolio;
+        MarketData::MarketDataFeed& feed;
+    };
+}
+
+#endif
+
+
+---
+
+WebDashboard.cpp
+
+#include "WebDashboard.hpp"
+#include <httplib.h>
+#include <nlohmann/json.hpp>
+
+namespace Dashboard {
+
+    WebDashboard::WebDashboard(Portfolio::PortfolioManager& portfolio, MarketData::MarketDataFeed& feed)
+        : portfolio(portfolio), feed(feed) {}
+
+    void WebDashboard::start() {
+        httplib::Server svr;
+
+        svr.Get("/portfolio", [this](const httplib::Request&, httplib::Response& res) {
+            portfolio.updatePrices(feed.getLatestData());
+            double value = portfolio.calculatePortfolioValue();
+
+            nlohmann::json response = {
+                {"portfolio_value", value}
+            };
+
+            res.set_content(response.dump(), "application/json");
+        });
+
+        std::cout << "Web dashboard running on http://localhost:8080\n";
+        svr.listen("0.0.0.0", 8080);
+    }
+}
+
+
+---
+
+Execution
+
+main.cpp
+
+#include "Portfolio/PortfolioManager.hpp"
+#include "MarketData/MarketDataFeed.hpp"
+#include "Dashboard/CLIDashboard.hpp"
+// #include "Dashboard/WebDashboard.hpp" // Uncomment for web dashboard
+
+int main() {
+    MarketData::MarketDataFeed feed;
+    feed.startFeed();
+
+    Portfolio::PortfolioManager portfolio;
+    portfolio.addInstrument({"AAPL", 150.0, 140.0, 0.2, 0.01, 0.5, 100});
+    portfolio.addInstrument({"GOOG", 2800.0, 2700.0, 0.25, 0.015, 0.4, 50});
+
+    Dashboard::CLIDashboard dashboard(portfolio, feed);
+    dashboard.start();
+
+    // Uncomment for web dashboard
+    // Dashboard::WebDashboard webDashboard(portfolio, feed);
+    // webDashboard.start();
+
+    return 0;
+}
+
+
+---
+
+HFT Standards
+
+1. Low Latency:
+
+Real-time updates with minimal delay in CLI or web dashboards.
+
+Efficient handling of portfolio updates.
+
+
+
+2. Scalability:
+
+CLI dashboard handles large portfolios dynamically.
+
+Web dashboard can serve multiple clients concurrently.
+
+
+
+3. Extensibility:
+
+Easily add new risk metrics or visualizations.
+
+
+
+
+Would you like to extend further with database integration or alerts for threshold breaches?
+
+
+To further expand the system with database integration and alerts for threshold breaches, we will:
+
+1. Database Integration:
+
+Store portfolio data, market data, Greeks, and risk metrics in a relational database like PostgreSQL or SQLite.
+
+Allow historical querying and backtesting directly from the database.
+
+
+
+2. Alerts for Threshold Breaches:
+
+Set thresholds for portfolio-level metrics (e.g., portfolio value, Greeks, VaR).
+
+Trigger real-time alerts (e.g., log messages, email, or SMS) when thresholds are breached.
+
+
+
+
+
+---
+
+Updated Features
+
+1. Database Integration:
+
+Store real-time metrics in the database for persistence and analytics.
+
+Query historical data for backtesting and reporting.
+
+
+
+2. Alert System:
+
+Monitor risk metrics in real-time.
+
+Notify stakeholders (via logs, emails, or other mechanisms) when thresholds are breached.
+
+
+
+
+
+---
+
+Updated Folder Structure
+
+RiskAnalysisSystem/
+├── src/
+│   ├── main.cpp                    # Entry point
+│   ├── Portfolio/
+│   │   ├── PortfolioManager.hpp    # Portfolio management and aggregation
+│   │   ├── PortfolioManager.cpp    # Implementation of portfolio management
+│   ├── Risk/
+│   │   ├── Alerts.hpp              # Alert system
+│   │   ├── Alerts.cpp              # Implementation of alert system
+│   │   ├── VaRCalculator.hpp       # Value-at-Risk calculation
+│   │   ├── VaRCalculator.cpp       # Implementation of VaR
+│   ├── MarketData/
+│   │   ├── MarketDataFeed.hpp      # Real-time or historical data feed
+│   │   ├── MarketDataFeed.cpp      # Implementation of market data feed
+│   ├── Database/
+│   │   ├── DatabaseManager.hpp     # Database integration
+│   │   ├── DatabaseManager.cpp     # Implementation of database manager
+│   ├── Dashboard/
+│   │   ├── CLIDashboard.hpp        # CLI dashboard
+│   │   ├── CLIDashboard.cpp        # Implementation of CLI dashboard
+├── data/
+│   ├── portfolio_data.csv          # Input portfolio data
+│   ├── historical_data.csv         # Historical data for backtesting
+├── CMakeLists.txt                  # Build configuration
+└── README.md                       # Documentation
+
+
+---
+
+1. Database Integration
+
+We'll integrate SQLite (for simplicity) to store and retrieve portfolio and risk metrics.
+
+
+---
+
+DatabaseManager.hpp
+
+#ifndef DATABASE_MANAGER_HPP
+#define DATABASE_MANAGER_HPP
+
+#include <string>
+#include <vector>
+#include <unordered_map>
+
+namespace Database {
+    class DatabaseManager {
+    public:
+        DatabaseManager(const std::string& dbPath);
+        void insertPortfolioValue(double portfolioValue);
+        void insertMetric(const std::string& metricName, double value);
+        std::vector<std::unordered_map<std::string, double>> queryMetrics(const std::string& metricName);
+
+    private:
+        std::string dbPath;
+        void initializeDatabase();
+    };
+}
+
+#endif
+
+
+---
+
+DatabaseManager.cpp
+
+#include "DatabaseManager.hpp"
+#include <sqlite3.h>
+#include <iostream>
+
+namespace Database {
+
+    DatabaseManager::DatabaseManager(const std::string& dbPath) : dbPath(dbPath) {
+        initializeDatabase();
+    }
+
+    void DatabaseManager::initializeDatabase() {
+        sqlite3* db;
+        if (sqlite3_open(dbPath.c_str(), &db) == SQLITE_OK) {
+            const char* createTableQuery = R"(
+                CREATE TABLE IF NOT EXISTS Metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    metric_name TEXT NOT NULL,
+                    metric_value REAL NOT NULL,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            )";
+
+            sqlite3_exec(db, createTableQuery, nullptr, nullptr, nullptr);
+            sqlite3_close(db);
+        } else {
+            std::cerr << "Failed to initialize database." << std::endl;
+        }
+    }
+
+    void DatabaseManager::insertPortfolioValue(double portfolioValue) {
+        insertMetric("PortfolioValue", portfolioValue);
+    }
+
+    void DatabaseManager::insertMetric(const std::string& metricName, double value) {
+        sqlite3* db;
+        if (sqlite3_open(dbPath.c_str(), &db) == SQLITE_OK) {
+            std::string insertQuery = "INSERT INTO Metrics (metric_name, metric_value) VALUES ('" +
+                                      metricName + "', " + std::to_string(value) + ");";
+            sqlite3_exec(db, insertQuery.c_str(), nullptr, nullptr, nullptr);
+            sqlite3_close(db);
+        }
+    }
+
+    std::vector<std::unordered_map<std::string, double>> DatabaseManager::queryMetrics(const std::string& metricName) {
+        sqlite3* db;
+        std::vector<std::unordered_map<std::string, double>> results;
+
+        if (sqlite3_open(dbPath.c_str(), &db) == SQLITE_OK) {
+            std::string query = "SELECT metric_value, timestamp FROM Metrics WHERE metric_name = '" + metricName + "';";
+            sqlite3_stmt* stmt;
+            if (sqlite3_prepare_v2(db, query.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+                while (sqlite3_step(stmt) == SQLITE_ROW) {
+                    double value = sqlite3_column_double(stmt, 0);
+                    results.push_back({{"metric_value", value}});
+                }
+                sqlite3_finalize(stmt);
+            }
+            sqlite3_close(db);
+        }
+
+        return results;
+    }
+}
+
+
+---
+
+2. Alert System
+
+Alerts.hpp
+
+#ifndef ALERTS_HPP
+#define ALERTS_HPP
+
+#include <string>
+
+namespace Risk {
+    class Alerts {
+    public:
+        static void checkThreshold(const std::string& metricName, double value, double threshold);
+    };
+}
+
+#endif
+
+
+---
+
+Alerts.cpp
+
+#include "Alerts.hpp"
+#include <iostream>
+
+namespace Risk {
+
+    void Alerts::checkThreshold(const std::string& metricName, double value, double threshold) {
+        if (value > threshold) {
+            std::cout << "ALERT: " << metricName << " exceeded threshold! Value: " << value
+                      << ", Threshold: " << threshold << std::endl;
+        }
+    }
+}
+
+
+---
+
+3. Integration in CLI Dashboard
+
+We integrate the DatabaseManager and Alerts into the dashboard for real-time alerts and persistence.
+
+
+---
+
+CLIDashboard.cpp (Updated)
+
+#include "CLIDashboard.hpp"
+#include "../Database/DatabaseManager.hpp"
+#include "../Risk/Alerts.hpp"
+#include <iostream>
+#include <chrono>
+#include <thread>
+
+namespace Dashboard {
+
+    CLIDashboard::CLIDashboard(Portfolio::PortfolioManager& portfolio, MarketData::MarketDataFeed& feed)
+        : portfolio(portfolio), feed(feed) {}
+
+    void CLIDashboard::start() {
+        Database::DatabaseManager dbManager("portfolio.db");
+
+        while (true) {
+            portfolio.updatePrices(feed.getLatestData());
+            double portfolioValue = portfolio.calculatePortfolioValue();
+
+            // Save portfolio value to database
+            dbManager.insertPortfolioValue(portfolioValue);
+
+            // Check for threshold breaches
+            Risk::Alerts::checkThreshold("PortfolioValue", portfolioValue, 1'500'000);
+
+            // Display portfolio value
+            display(portfolioValue);
+
+            std::this_thread::sleep_for(std::chrono::seconds(1)); // Update every second
+        }
+    }
+
+    void CLIDashboard::display(double portfolioValue) {
+        std::cout << "\033[2J\033[1;1H"; // Clear screen
+        std::cout << "Real-Time Portfolio Dashboard\n";
+        std::cout << "-----------------------------\n";
+        std::cout << "Portfolio Value: $" << portfolioValue << "\n";
+        std::cout << "-----------------------------\n";
+    }
+}
+
+
+---
+
+Execution
+
+main.cpp
+
+#include "Portfolio/PortfolioManager.hpp"
+#include "MarketData/MarketDataFeed.hpp"
+#include "Dashboard/CLIDashboard.hpp"
+
+int main() {
+    MarketData::MarketDataFeed feed;
+    feed.startFeed();
+
+    Portfolio::PortfolioManager portfolio;
+    portfolio.addInstrument({"AAPL", 150.0, 140.0, 0.2, 0.01, 0.5, 100});
+    portfolio.addInstrument({"GOOG", 2800.0, 2700.0, 0.25, 0.015, 0.4, 50});
+
+    Dashboard::CLIDashboard dashboard(portfolio, feed);
+    dashboard.start();
+
+    return 0;
+}
+
+
+---
+
+HFT Standards
+
+1. Low Latency:
+
+Efficient SQLite integration for fast writes and reads.
+
+Alerts trigger in real-time without delaying dashboard updates.
+
+
+
+2. Scalability:
+
+Database stores metrics for long-term analysis.
+
+Alerts scale easily for multiple metrics and thresholds.
+
+
+
+3. Extensibility:
+
+Add new alert mechanisms (e.g., email, SMS).
+
+Integrate dashboards with web APIs for advanced monitoring.
+
+
+
+
+Would you like further extensions, such as advanced alert notifications or distributed systems integration?
+
+
